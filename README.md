@@ -21,14 +21,14 @@ $ cd net-bouncer
 $ make
 ```
 
-The executable `net-counver` will ge created. Use `make install` to install the program in the system or any other location.
+The executable `net-bouncer` will ge created. Use `make install` to install the program in the system or any other location.
 
 ## Running
 
 To run `net-bouncer`, run the program indicating the port to listen on. The port is specified with the `-p` parameter and the destination file for the log is specified with `-l`. If no log file is specified, the output go to `stderr`.
 
 ```sh
-$ net-counter -p 22 -l /var/log/net-bouncer-22.log
+$ net-bouncer -p 22 -l /var/log/net-bouncer-22.log
 ```
 
 The command above will listen on port 22 (SSH) and store logs in `/var/log/net-bouncer-22.log`. The log looks like the following:
