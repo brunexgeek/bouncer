@@ -1,4 +1,21 @@
-// cc -std=c99 -Wall -Wextra -pedantic -Wno-missing-field-initializers net-that.c -o net-that
+/*
+ * net-bouncer
+ * Honeypot program that logs connection attempts and refuses them
+ *
+ * Copyright 2024 Bruno Costa
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
 
 #define _XOPEN_SOURCE 600
 
@@ -79,9 +96,9 @@ static void log_connection( enum log_level level, struct sockaddr *source )
     log_message(level, "Connection from %s", address);
 }
 
-static void log_error(int err)
+static void log_error(const char *message, int err)
 {
-    log_message(LOG_ERROR, "%s", strerror(err));
+    log_message(LOG_ERROR, "%s: %s", message, strerror(err));
 }
 
 static void signal_handler(int signum)
@@ -186,20 +203,21 @@ int main(int argc, char** argv)
             global_log = stderr;
             int err = errno;
             log_message(LOG_ERROR, "Unable to open log file '%s'", global_log_file);
-            log_error(err);
+            log_error("IO error", err);
             return 1;
         }
     }
     else
         global_log = stderr;
 
+    // create the server socket
     int conn = create_server(global_port, global_family, global_max_connections);
     if (conn < 0)
     {
-        log_error(conn);
+        log_error("Unable to create socket server", conn);
         return 1;
     }
-    log_message(LOG_INFO, "Listening to any address at port %d", global_port);
+    log_message(LOG_INFO, "Listening to any address on the port %d", global_port);
 
     // capture signals to terminate the program
     struct sigaction action;
@@ -209,6 +227,7 @@ int main(int argc, char** argv)
     sigaction(SIGABRT, &action, NULL);
     sigaction(SIGINT, &action, NULL);
 
+    // keep accepting clients until the program finishes
     while (global_running)
     {
         struct sockaddr_in6 address;
@@ -216,10 +235,10 @@ int main(int argc, char** argv)
         int client = accept(conn, (struct sockaddr *) &address, &len);
         if (client < 0)
         {
-            perror("Accept error");
+            log_error("Error accepting connection", errno);
             break;
         }
-
+        // log and close the connection
         log_connection(LOG_INFO, (struct sockaddr *) &address);
         close(client);
     }
