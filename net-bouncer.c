@@ -66,6 +66,7 @@ static void log_message(enum log_level level, const char *format, ...)
     vfprintf(global_log, format, args);
     va_end(args);
     fputc('\n', global_log);
+    fflush(global_log);
 }
 
 static void log_connection( enum log_level level, struct sockaddr *source )
