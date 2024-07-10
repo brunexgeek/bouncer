@@ -121,7 +121,12 @@ static void signal_handler(int signum)
 
 static void parse_help(char * const *argv)
 {
-    fprintf(stderr, "Usage: %s -p port1 [ -p port2 ... ] [ -l log_file ]\n", argv[0]);
+    fprintf(stderr, "Usage: %s -p port1 [ -p port2 ... ] [ -l log_file ] [ -4 | -6 ]\n\n", argv[0]);
+    fputs("-p number     Listen on the specified port; this option may appear multiple times.\n"
+        "-l log_file   Path to the log file; if omitted, the log will be output to 'stderr'.\n"
+        "-4            Listen for IPv4 connections (any address); this is the default.\n"
+        "-6            Listen for IPv6 connections (any address).\n",
+        stderr);
 }
 
 static bool parse_options(int argc, char * const *argv)
