@@ -32,6 +32,7 @@
 #include <time.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <poll.h>
 
 enum log_level
 {
@@ -49,13 +50,20 @@ static const char *LOG_LEVELS[] =
     "DEBUG"
 };
 
+static const int VERSION_MAJOR = 0;
+static const int VERSION_MINOR = 1;
+static const int VERSION_PATCH = 0;
+
+#define MAX_CONNECTIONS  50
+#define MAX_PORTS        50
+
 static bool global_running = true;
 static const char *global_log_file = NULL;
 static FILE *global_log = NULL;
 static enum log_level global_level = LOG_INFO;
 static int global_family = AF_INET;
-static int global_port = 0;
-static const int global_max_connections = 50;
+static int global_ports[MAX_PORTS];
+static int global_port_count = 0;
 
 int64_t current_time_ms()
 {
@@ -86,14 +94,18 @@ static void log_message(enum log_level level, const char *format, ...)
     fflush(global_log);
 }
 
-static void log_connection( enum log_level level, struct sockaddr *source )
+static void log_connection_ipv4( enum log_level level, const struct sockaddr_in *source )
 {
     char address[INET_ADDRSTRLEN];
-    if (source->sa_family == AF_INET)
-        inet_ntop(AF_INET, &((struct sockaddr_in*)source)->sin_addr, address, sizeof(struct sockaddr_in));
-    else
-        inet_ntop(AF_INET6, &((struct sockaddr_in6*)source)->sin6_addr, address, sizeof(struct sockaddr_in6));
-    log_message(level, "Connection from %s", address);
+    inet_ntop(AF_INET, &source->sin_addr, address, sizeof(struct sockaddr_in));
+    log_message(level, "Connection from %s on port %d", address, source->sin_port);
+}
+
+static void log_connection_ipv6( enum log_level level, const struct sockaddr_in6 *source )
+{
+    char address[INET6_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &source->sin6_addr, address, sizeof(struct sockaddr_in6));
+    log_message(level, "Connection from %s on port %d", address, source->sin6_port);
 }
 
 static void log_error(const char *message, int err)
@@ -109,21 +121,32 @@ static void signal_handler(int signum)
 
 static void parse_help(char * const *argv)
 {
-    fprintf(stderr, "Usage: %s -p port [ -l log_file ]\n", argv[0]);
+    fprintf(stderr, "Usage: %s -p port1 [ -p port2 ... ] [ -l log_file ]\n", argv[0]);
 }
 
 static bool parse_options(int argc, char * const *argv)
 {
     int option = 0;
-    while ((option = getopt(argc, argv, "p:l:")) >= 0)
+    while ((option = getopt(argc, argv, "p:l:46")) >= 0)
     {
         switch (option)
         {
             case 'p':
-                global_port = atoi(optarg);
+                if (global_port_count >= MAX_PORTS)
+                {
+                    fprintf(stderr, "%s: too many ports; you must specify at most %d ports\n", argv[0], MAX_PORTS);
+                    return false;
+                }
+                global_ports[global_port_count++] = atoi(optarg);
                 break;
             case 'l':
                 global_log_file = optarg;
+                break;
+            case '4':
+                global_family = AF_INET;
+                break;
+            case '6':
+                global_family = AF_INET6;
                 break;
             default:
                 parse_help(argv);
@@ -131,10 +154,9 @@ static bool parse_options(int argc, char * const *argv)
         }
     }
 
-    if (global_port == 0)
+    if (global_port_count == 0)
     {
         fprintf(stderr, "%s: missing port number\n", argv[0]);
-        parse_help(argv);
         return false;
     }
 
@@ -157,23 +179,25 @@ static int create_server(int port, int family, int max_connections)
         log_message(LOG_WARNING, "Unable to make the address reusable; %s", strerror(errno));
 
     int result = 0;
-    if (global_family == AF_INET)
-    {
-        struct sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons( (uint16_t) port);
-        addr.sin_addr.s_addr = INADDR_ANY;
-        memset(&addr.sin_zero, 0, sizeof(addr.sin_zero));
-        result = bind(conn, (const struct sockaddr *) &addr, sizeof(addr));
-    }
-    else
+    if (global_family == AF_INET6)
     {
         struct sockaddr_in6 addr;
+        memset(&addr, 0, sizeof(addr));
         addr.sin6_family = AF_INET6;
         addr.sin6_port = htons( (uint16_t) port);
         addr.sin6_addr = in6addr_any;
         result = bind(conn, (const struct sockaddr *) &addr, sizeof(addr));
     }
+    else
+    {
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons( (uint16_t) port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        result = bind(conn, (const struct sockaddr *) &addr, sizeof(addr));
+    }
+
     if (result < 0)
     {
         close(conn);
@@ -193,7 +217,10 @@ static int create_server(int port, int family, int max_connections)
 int main(int argc, char** argv)
 {
     if (!parse_options(argc, argv))
+    {
+        parse_help(argv);
         return 1;
+    }
 
     if (global_log_file)
     {
@@ -210,14 +237,22 @@ int main(int argc, char** argv)
     else
         global_log = stderr;
 
+    fprintf(global_log, "\nnet-bouncer %d.%d.%d\n", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+
     // create the server socket
-    int conn = create_server(global_port, global_family, global_max_connections);
-    if (conn < 0)
+    struct pollfd wait_list[MAX_PORTS];
+    memset(wait_list, 0, sizeof(wait_list));
+    for (int p = 0; global_port_count > p; ++p)
     {
-        log_error("Unable to create socket server", conn);
-        return 1;
+        wait_list[p].events = POLLIN;
+        wait_list[p].fd = create_server(global_ports[p], global_family, MAX_CONNECTIONS);
+        if (wait_list[p].fd < 0)
+        {
+            log_error("Unable to create socket server", wait_list[p].fd);
+            return 1;
+        }
+        log_message(LOG_INFO, "Listening to any address on the port %d", global_ports[p]);
     }
-    log_message(LOG_INFO, "Listening to any address on the port %d", global_port);
 
     // capture signals to terminate the program
     struct sigaction action;
@@ -230,19 +265,38 @@ int main(int argc, char** argv)
     // keep accepting clients until the program finishes
     while (global_running)
     {
-        struct sockaddr_in6 address;
-        socklen_t len = sizeof(address);
-        int client = accept(conn, (struct sockaddr *) &address, &len);
-        if (client < 0)
+        int events = poll(wait_list, (nfds_t) global_port_count, -1);
+        if (events < 0)
         {
-            log_error("Error accepting connection", errno);
+            log_error("Error waiting connection", errno);
             break;
         }
-        // log and close the connection
-        log_connection(LOG_INFO, (struct sockaddr *) &address);
-        close(client);
+
+        for (int p = 0; p <= global_port_count && events > 0; ++p)
+        {
+            if ((wait_list[p].revents & POLLIN) == 0)
+                continue;
+            --events;
+            wait_list[p].revents = 0;
+
+            struct sockaddr_in6 address;
+            socklen_t len = sizeof(address);
+            int client = accept(wait_list[p].fd, (struct sockaddr *) &address, &len);
+            if (client < 0)
+            {
+                log_error("Error accepting connection", errno);
+                break;
+            }
+            // log and close the connection
+            if (global_family == AF_INET6)
+                log_connection_ipv6(LOG_INFO, (const struct sockaddr_in6 *) &address);
+            else
+                log_connection_ipv4(LOG_INFO, (const struct sockaddr_in *) &address);
+            close(client);
+        }
     }
 
-    close(conn);
+    for (int p = 0; p < global_port_count; ++p)
+        close(wait_list[p].fd);
     return 0;
 }
