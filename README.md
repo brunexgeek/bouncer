@@ -56,7 +56,7 @@ After=network-online.target
 [Service]
 User=net-bouncer
 Group=net-bouncer
-ExecStart=net-bouncer -p 22 -l /var/log/net-bouncer-22.log
+ExecStart=net-bouncer -p 22 -p 23 -l /var/log/net-bouncer.log
 
 [Install]
 WantedBy=default.target
@@ -94,3 +94,7 @@ Finally, restart the *fail2ban* service:
 ```sh
 $ systemd restart fail2ban.service
 ```
+
+## License
+
+This program is distributed under [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
