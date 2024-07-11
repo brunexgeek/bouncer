@@ -94,18 +94,18 @@ static void log_message(enum log_level level, const char *format, ...)
     fflush(global_log);
 }
 
-static void log_connection_ipv4( enum log_level level, const struct sockaddr_in *source )
+static void log_connection_ipv4( enum log_level level, const struct sockaddr_in *source, int port )
 {
     char address[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &source->sin_addr, address, sizeof(struct sockaddr_in));
-    log_message(level, "Connection from %s on port %d", address, source->sin_port);
+    log_message(level, "Connection from %s on port %d", address, port);
 }
 
-static void log_connection_ipv6( enum log_level level, const struct sockaddr_in6 *source )
+static void log_connection_ipv6( enum log_level level, const struct sockaddr_in6 *source, int port )
 {
     char address[INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &source->sin6_addr, address, sizeof(struct sockaddr_in6));
-    log_message(level, "Connection from %s on port %d", address, source->sin6_port);
+    log_message(level, "Connection from %s on port %d", address, port);
 }
 
 static void log_error(const char *message, int err)
@@ -294,9 +294,9 @@ int main(int argc, char** argv)
             }
             // log and close the connection
             if (global_family == AF_INET6)
-                log_connection_ipv6(LOG_INFO, (const struct sockaddr_in6 *) &address);
+                log_connection_ipv6(LOG_INFO, (const struct sockaddr_in6 *) &address, global_ports[p]);
             else
-                log_connection_ipv4(LOG_INFO, (const struct sockaddr_in *) &address);
+                log_connection_ipv4(LOG_INFO, (const struct sockaddr_in *) &address, global_ports[p]);
             close(client);
         }
     }

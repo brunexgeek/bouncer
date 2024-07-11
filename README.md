@@ -25,22 +25,24 @@ The executable `net-bouncer` will ge created. Use `make install` to install the 
 
 ## Running
 
-To run `net-bouncer`, run the program indicating the port to listen on. The port is specified with the `-p` parameter and the destination file for the log is specified with `-l`. If no log file is specified, the output go to `stderr`.
+To start the honeypot, run `net-bouncer` specifying the port to listen on using the `-p` parameter. At least one port must be provided. The destination file for the log can be specified with `-l`; if no log file is provided, the output will go to `stderr`.
 
 ```sh
-$ net-bouncer -p 22 -l /var/log/net-bouncer-22.log
+$ net-bouncer -p 22 -p 23 -l /var/log/net-bouncer.log
 ```
 
-The command above will listen on port 22 (SSH) and store logs in `/var/log/net-bouncer-22.log`. The log looks like the following:
+The command above will listen on ports 22 (SSH) and 23 (Telnet) and store logs in `/var/log/net-bouncer.log`. The log looks like the following:
 
 ```
+net-bouncer 0.1.0
 2024-07-08 21:26:44.730 [INFO] Listening to any address on the port 22
-2024-07-08 21:26:48.474 [INFO] Connection from 127.0.0.1
-2024-07-08 21:26:50.114 [INFO] Connection from 3.3.1.20
-2024-07-08 21:26:50.738 [INFO] Connection from 64.25.33.120
+2024-07-08 21:26:44.730 [INFO] Listening to any address on the port 23
+2024-07-08 21:26:48.474 [INFO] Connection from 127.0.0.1 on port 22
+2024-07-08 21:26:50.114 [INFO] Connection from 3.3.1.20 on port 23
+2024-07-08 21:26:50.738 [INFO] Connection from 64.25.33.120 on port 22
 ```
 
-If you want to honeypot more than one port, launch one instance for each port.
+The program will generate a log entry for each connection, displaying the remote address and the local port that the remote actor attempted to access.
 
 ## Running as service with systemd
 
@@ -64,7 +66,7 @@ The service above assumes you have a user and group named `net-bouncer`, which i
 
 ## Monitoring the log with fail2ban
 
-You can use the information from the *net-bouncer*'s log to instruct *fail2ban* to block the IP addresses of machines that triggered the honeypot. I assume you already have *fail2ban* installed and operational in your environment. For detailed configuration instructions, refer to the official *fail2ban* documentation.
+You can use the information from the *net-bouncer*'s log to instruct *fail2ban* to block the IP addresses of machines that triggered the honeypot. I'll assume you already have *fail2ban* installed and operational in your environment. For detailed configuration instructions, refer to the official *fail2ban* documentation.
 
 First, set up a filter that correctly identifies the relevant lines in your log. To do this, create a file named `filter.d/net-bouncer.conf` in the *fail2ban* configuration directory (usually located at `/etc/fail2ban`). Here’s the content for that file:
 
